@@ -44,18 +44,8 @@ let query = '';
 const handleSearchInput = throttle(SEARCH_THROTTLE_TIME, (value) => {
   query = value;
   getSearchResults(query, SEARCH_RESULTS_LIMIT).then((r) => {
-    // sort these?
-    if (r.constructor === Array) {
-      results = r.sort((a, b) => {
-        const aHas = a.name.toLowerCase().includes(query);
-        const bHas = b.name.toLowerCase().includes(query);
-        if (aHas && !bHas) return -1;
-        if (bHas && !aHas) return 1;
-        return 0;
-      });
-    } else {
-      results = r;
-    }
+    // Remove search items without data.
+    results = r.filter(item => item.info.calculated.seen_in_processes.length);
     searchWaiting = false;
   });
   searchIsActive = true;
