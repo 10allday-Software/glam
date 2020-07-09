@@ -1,5 +1,3 @@
-import { isSelectedProcessValid } from '../utils/probe-utils';
-
 export default {
   sampleRate: 0.1,
   dimensions: {
@@ -41,9 +39,6 @@ export default {
         { key: 'content', label: 'Content' },
         { key: 'gpu', label: 'GPU' },
       ],
-      isValidKey(key, probe) {
-        return isSelectedProcessValid(probe.record_in_processes, key);
-      },
     },
   },
   getParamsForQueryString(store) {
@@ -67,16 +62,6 @@ export default {
       process: store.productDimensions.process,
       aggregationLevel: store.productDimensions.aggregationLevel,
     };
-  },
-  transformProbeForGLAM(probe) {
-    const pr = { ...probe };
-    if (pr.record_in_processes[0] === 'all') {
-      pr.record_in_processes = ['main', 'content', 'gpu'];
-    }
-    if (pr.record_in_processes[0] === 'all_childs') {
-      pr.record_in_processes = ['content', 'gpu'];
-    }
-    return pr;
   },
   setDefaultsForProbe(store, probe) {
     const state = store.getState();

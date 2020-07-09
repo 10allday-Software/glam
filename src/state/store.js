@@ -6,7 +6,7 @@ import { createStore } from '../utils/create-store';
 // FIXME: take care of this dependency cycle.
 import { probeSet } from './telemetry-search'; // eslint-disable-line import/no-cycle
 
-import { getProbeData } from './api';
+import { getProbeData, getSearchResults } from './api';
 
 import CONFIG from '../config/firefox-desktop';
 import { numHighlightedBuckets } from '../config/shared';
@@ -122,12 +122,15 @@ export const resetFilters = () => {
   store.setDimension('process', getDefaultFieldValue('process'));
 };
 
-export const probe = derived([probeSet, store], ([$probeSet, $store]) => {
-  if (!$probeSet || !$store.probeName) return undefined;
-  let pr = $probeSet.find((p) => p.name === $store.probeName);
-  if (CONFIG.transformProbeForGLAM) pr = CONFIG.transformProbeForGLAM(pr);
-  return pr;
-});
+export const probe = derived(store, ($store, set) => {
+  if (!$store.probeName) return undefined;
+  let pr = {};
+  getSearchResults($store.probeName).then(r => {
+    pr = { ...r[0], loaded: true};
+    if (CONFIG.transformProbeForGLAM) pr = CONFIG.transformProbeForGLAM(pr);
+    set(pr);
+  });
+}, {loaded: false});
 
 export const hasDefaultControlFields = derived(store, ($store) =>
   Object.values(CONFIG.dimensions).every(

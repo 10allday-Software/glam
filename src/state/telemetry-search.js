@@ -14,31 +14,3 @@ export const probeSet = readable(undefined, async (set) => {
   }));
   set(data);
 });
-
-const telemetrySearch = derived(
-  probeSet,
-  ($probeSet) => {
-    if (!$probeSet) return { loaded: false };
-
-    const search = new FlexSearch({
-      suggest: true,
-      doc: {
-        id: 'id',
-        field: ['name', 'description', 'type'],
-      },
-    });
-    search.add($probeSet);
-    search.loaded = true;
-    const { probeName } = store.getState();
-    if (probeName) {
-      const probeInfo = $probeSet.find((d) => d.name === probeName);
-      if (probeInfo) {
-        store.setField('probe', probeInfo);
-      }
-    }
-    return search;
-  },
-  { loaded: false }
-);
-
-export default telemetrySearch;

@@ -6,7 +6,6 @@ import StatusLabel from 'udgl/StatusLabel.svelte';
 import ExternalLink from 'udgl/icons/ExternalLink.svelte';
 import Doc from '../Doc.svelte';
 import Brackets from '../Brackets.svelte';
-import telemetrySearch from '../../state/telemetry-search';
 import { store, probe, dataset } from '../../state/store';
 
 import { downloadString } from '../../utils/download';
@@ -31,7 +30,6 @@ async function exportData() {
   const data = await $dataset;
   downloadString(JSON.stringify(data), 'text', `${$probe.name}.json`);
 }
-
 </script>
 
 <style>
@@ -190,79 +188,84 @@ h2 {
 </style>
 
 <div class="drawer details-drawer">
-{#if !$telemetrySearch.loaded}
-    {#if visible}
+
+  {#if !$probe.loaded && visible}
     <div in:fly={paneTransition} class="drawer-section">
-        <div class="spinner-and-text">
-            <LineSegSpinner size={48} color={'var(--cool-gray-400)'} />
-            <div in:fade={{ duration: paneTransition.duration * 2 }}>Loading Probes</div>
-        </div>
+      <div class="spinner-and-text">
+        <LineSegSpinner size={48} color={'var(--cool-gray-400)'} />
+        <div in:fade={{ duration: paneTransition.duration * 2 }}>Loading Probes</div>
+      </div>
     </div>
-    {/if}
-{:else if probeIsSelected($probe)}
-<div in:fly={paneTransition} class="drawer-section-container probe-details">
-    <!-- probe-details-content -->
-    <div class="probe-details-content">
+  {/if}
+  {#if probeIsSelected($probe)}
+    <div in:fly={paneTransition} class="drawer-section-container probe-details">
+      <!-- probe-details-content -->
+      <div class="probe-details-content">
         <div class="probe-details-overview">
-        {#if $probe.type}
+          {#if $probe.type}
             <dl class="drawer-section probe-details-overview-left">
-                <dt>
-                    <a class="probe-type-link" href={PROBE_TYPE_DOCS[$probe.type] || PROBE_TYPE_DOCS.default}>
-                        {$probe.type}
-                    </a>
-                </dt>
-                {#if $probe.kind}
-                    <dd>{$probe.kind}</dd>
-                {/if}
+              <dt>
+                <a class="probe-type-link" href={PROBE_TYPE_DOCS[$probe.type] || PROBE_TYPE_DOCS.default}>
+                  {$probe.type}
+                </a>
+              </dt>
+              {#if $probe.info.calculated.latest_history.details.kind}
+                <dd>{$probe.info.calculated.latest_history.details.kind}</dd>
+              {/if}
             </dl>
-        {/if}
-        {#if $probe.active !== undefined}
+          {/if}
+          {#if $probe.info && $probe.info.calculated.active !== undefined}
             <div class="probe-details-overview-right">
-                <StatusLabel tooltip={$probe.active ? 'this probe is currently active and collecting data' : 'this probe is inactive and is thus not collecting data'} level={$probe.active ? 'success' : 'info'}>
-                    {$probe.active ? 'active' : 'inactive'}
-                </StatusLabel>
+              <StatusLabel
+                tooltip={
+                  $probe.info.calculated.active ? 'this probe is currently active and collecting data' : 'this probe is inactive and is thus not collecting data'}
+                  level={$probe.info.calculated.active ? 'success' : 'info'}>
+                {$probe.info.calculated.active ? 'active' : 'inactive'}
+              </StatusLabel>
             </div>
-        {/if}
+          {/if}
         </div>
+        <!-- TODO: This needs much additional logic from PTMO to display (fwiw it's currently nonfunctional anyway)
         {#if $store.versions && $store.versions.length}
-            <dl class="drawer-section probe-details-overview-left probe-details-overview-left--subtle">
-                <dt>{$store.productDimensions.channel}</dt>
-                <dd class="probe-details-overview-left--padded">
-                    {$probe.versions[$store.productDimensions.channel][0]}
-                    &ndash; {$probe.versions[$store.productDimensions.channel][1]}
-                </dd>
-            </dl>
+          <dl class="drawer-section probe-details-overview-left probe-details-overview-left--subtle">
+            <dt>{$store.productDimensions.channel}</dt>
+            <dd class="probe-details-overview-left--padded">
+              {$probe.versions[$store.productDimensions.channel][0]}
+              &ndash; {$probe.versions[$store.productDimensions.channel][1]}
+            </dd>
+          </dl>
         {/if}
-        <div class=drawer-section>
-            {#if $probe.description}
-                <h2 class="detail__heading--01">description</h2>
-                <div class="probe-description helper-text--01">
-                    {@html $probe.description}
-                    <a class="more-info-link" href={`https://probes.telemetry.mozilla.org/?view=detail&probeId=${$probe.apiName}`} target="_blank">
-                        more info <ExternalLink size=12 />
-                    </a>
-                </div>
-            {/if}
-        </div>
-        {#if $probe.bugs && $probe.bugs.length}
+        -->
         <div class="drawer-section">
+          {#if $probe.description}
+            <h2 class="detail__heading--01">description</h2>
+            <div class="probe-description helper-text--01">
+              {@html $probe.description}
+              <a class="more-info-link" href={`https://probes.telemetry.mozilla.org/?view=detail&probeId=${$probe.type}/${$probe.info.name}`} target="_blank">
+                more info <ExternalLink size=12 />
+              </a>
+            </div>
+          {/if}
+        </div>
+        {#if $probe.info && $probe.info.calculated.latest_history.bug_numbers && $probe.info.calculated.latest_history.bug_numbers.length}
+          <div class="drawer-section">
             <h2 class="detail__heading--01">associated bugs</h2>
             <div class="bug-list helper-text--01">
-            {#each $probe.bugs as bugID, i (bugID)}
+              {#each $probe.info.calculated.latest_history.bug_numbers as bugID, i (bugID)}
                 <a
-                href='https://bugzilla.mozilla.org/show_bug.cgi?id={bugID}'
+                href="https://bugzilla.mozilla.org/show_bug.cgi?id={bugID}"
                 target="_blank">{bugID}</a>
-            {/each}
+              {/each}
             </div>
-        </div>
+          </div>
         {/if}
-    </div>
-    <!-- /probe-details-content -->
+      </div>
+      <!-- /probe-details-content -->
 
-    <!-- probe-details-download -->
-    <div class="probe-details-download">
+      <!-- probe-details-download -->
+      <div class="probe-details-download">
 
-        <div class='drawer-section  drawer-section--end'>
+        <div class="drawer-section  drawer-section--end">
           <!-- FIXME: once @graph-paper/button supports href, use that instead. -->
           <button
             on:click={exportData}
@@ -279,15 +282,16 @@ h2 {
             Documentation
           </a>
         </div>
-    </div>
-    <!-- /probe-details-download -->
+      </div>
+      <!-- /probe-details-download -->
 
-</div>
-{:else}
-    <div class="drawer-section">
-        <div class="empty-details">
-            search for a telemetry probe above
-        </div>
     </div>
-{/if}
+  {:else}
+    <div class="drawer-section">
+      <div class="empty-details">
+        search for a telemetry probe above
+      </div>
+    </div>
+  {/if}
 </div>
+<!-- /details-drawer -->
