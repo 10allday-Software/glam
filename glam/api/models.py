@@ -1,4 +1,3 @@
-from django.contrib.postgres.fields import JSONField
 from django.core.cache import caches
 from django.db import models
 
@@ -8,7 +7,7 @@ from glam.api import constants
 class Probe(models.Model):
     id = models.AutoField(primary_key=True)
     key = models.CharField(max_length=100)
-    info = JSONField()
+    info = models.JSONField()
 
     class Meta:
         db_table = "glam_probe"
@@ -26,9 +25,15 @@ class Probe(models.Model):
         cache.set("__labels__", True)
 
 
+class LastUpdated(models.Model):
+    product = models.CharField(max_length=100)
+    last_updated = models.DateTimeField()
+
+
 class AbstractFenixAggregation(models.Model):
     id = models.BigAutoField(primary_key=True)
     # Dimensions.
+    app_id = models.CharField(max_length=100)
     channel = models.CharField(max_length=100)
     version = models.CharField(max_length=100)
     ping_type = models.CharField(max_length=100)
@@ -55,6 +60,7 @@ class FenixAggregation(AbstractFenixAggregation):
             models.UniqueConstraint(
                 name="fenix_unique_dimensions",
                 fields=[
+                    "app_id",
                     "channel",
                     "version",
                     "ping_type",
@@ -129,8 +135,7 @@ class DesktopBetaAggregation(AbstractDesktopAggregation):
         db_table = "glam_desktop_beta_aggregation"
         constraints = [
             models.UniqueConstraint(
-                name="desktop_beta_unique_dimensions",
-                fields=DESKTOP_CONSTRAINT_FIELDS,
+                name="desktop_beta_unique_dimensions", fields=DESKTOP_CONSTRAINT_FIELDS,
             )
         ]
 
@@ -174,5 +179,26 @@ class FirefoxCounts(models.Model):
             models.UniqueConstraint(
                 name="unique_dimensions",
                 fields=["channel", "version", "build_id", "os"],
+            )
+        ]
+
+
+class FenixCounts(models.Model):
+    id = models.AutoField(primary_key=True)
+    app_id = models.CharField(max_length=100)
+    channel = models.CharField(max_length=100)
+    version = models.CharField(max_length=100)
+    ping_type = models.CharField(max_length=100)
+    build_id = models.CharField(max_length=100)
+    build_date = models.DateTimeField(null=True)
+    os = models.CharField(max_length=100)
+    total_users = models.IntegerField()
+
+    class Meta:
+        db_table = "glam_fenix_counts"
+        constraints = [
+            models.UniqueConstraint(
+                name="fenix_counts_unique_dimensions",
+                fields=["app_id", "channel", "version", "ping_type", "build_id", "os"],
             )
         ]

@@ -1,5 +1,5 @@
 # BACKEND IMAGE
-FROM python:3.8-slim AS backend
+FROM python:3.9-slim AS backend
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -36,7 +36,6 @@ FROM node:lts-slim AS frontend
 WORKDIR /app
 
 COPY package*.json /app/
-COPY /src/udgl/ /app/src/udgl/
 RUN npm install
 COPY . /app/
 RUN npm run build
@@ -44,7 +43,7 @@ RUN npm run build
 
 
 # FINAL IMAGE
-FROM python:3-slim AS final
+FROM python:3.9-slim AS final
 
 EXPOSE 8000
 

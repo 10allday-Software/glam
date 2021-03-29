@@ -1,11 +1,12 @@
-import svelte from 'rollup-plugin-svelte';
-import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
-import livereload from 'rollup-plugin-livereload';
-import { terser } from 'rollup-plugin-terser';
+import css from 'rollup-plugin-css-only';
 import json from '@rollup/plugin-json';
+import livereload from 'rollup-plugin-livereload';
 import replace from '@rollup/plugin-replace';
-import postcss from 'rollup-plugin-postcss';
+import resolve from '@rollup/plugin-node-resolve';
+import { string } from 'rollup-plugin-string';
+import svelte from 'rollup-plugin-svelte';
+import { terser } from 'rollup-plugin-terser';
 
 const production = process.env.NODE_ENV === 'production';
 
@@ -34,18 +35,17 @@ export default {
       __GA_TRACKING_ID__: process.env.GA_TRACKING_ID,
       __BASE_SEARCH_DOMAIN__: SEARCH_DOMAIN,
     }),
+    string({ include: 'src/**/*.tpl' }),
     svelte({
-      // enable run-time checks when not in production
-      dev: !production,
-      // we'll extract any component CSS out into
-      // a separate file — better for performance
-      css: (css) => {
-        css.write('public/static/bundle.css');
+      compilerOptions: {
+        // enable run-time checks when not in production
+        dev: !production,
       },
-      emitCss: true,
     }),
-    postcss({
-      extract: true,
+    // we'll extract any component CSS out into
+    // a separate file — better for performance
+    css({
+      output: 'bundle.css',
     }),
 
     // If you have external dependencies installed from
@@ -53,7 +53,10 @@ export default {
     // some cases you'll need additional configuration —
     // consult the documentation for details:
     // https://github.com/rollup/rollup-plugin-commonjs
-    resolve({ browser: true }),
+    resolve({
+      browser: true,
+      dedupe: ['svelte'],
+    }),
     commonjs(),
 
     // Watch the `public/static/` directory and refresh

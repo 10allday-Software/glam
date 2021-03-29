@@ -1,12 +1,10 @@
 <script>
   import page from 'page';
-  import Spinner from 'udgl/LineSegSpinner.svelte';
   import { onMount } from 'svelte';
-
+  import { get } from 'svelte/store';
   import productConfig from '../config/products';
   import { store, currentQuery } from '../state/store';
-  import { probeSet } from '../state/telemetry-search';
-  import { codeAndStateInQuery } from '../utils/url';
+  import { getSearchResults } from '../state/api';
 
   // Wrappers
   import Layout from './wrappers/Layout.svelte';
@@ -17,13 +15,12 @@
   import ProbeTable from './pages/probe/Table.svelte';
   import NotFound from './pages/NotFound.svelte';
 
-
   let visible = false;
   let component;
 
   function updateQueryString(query) {
     if (window.history.replaceState) {
-      const newURL = `${window.location.origin}${window.location.pathname}?${query}`;
+      const newURL = `${window.location.origin}${window.location.pathname}${query}`;
       window.history.replaceState(null, null, newURL);
     }
   }
@@ -33,11 +30,7 @@
   // with no arguments and use $currentQuery in the implementation of
   // updateQueryString(), this block would never run and the query string would
   // therefore never update in response to the user activity.
-  //
-  // We also need to avoid running this block whenever the code= and state= keys
-  // are in the query, otherwise we would clobber them. Auth0 needs to read them
-  // to authenticate the user.
-  $: if (visible && !codeAndStateInQuery()) {
+  $: if (visible) {
     updateQueryString($currentQuery);
   }
 
@@ -47,19 +40,32 @@
 
   function useComponent(componentToUse, view) {
     return function handle({ params: { product, section, probeName } }) {
+      const storeValue = get(store);
       component = componentToUse;
 
       // Issue #355: Update the probe here, whenever the path changes, to ensure
       // that clicks to the back/forward buttons work as expected.
       if (probeName) {
+        store.setField('probe', { loaded: false });
         store.setField('probeName', probeName);
-        if ($probeSet) {
-          let newProbe = $probeSet.find((p) => p.name === probeName);
-          if (productConfig[$store.product].transformProbeForGLAM) {
-            newProbe = productConfig[$store.product].transformProbeForGLAM(newProbe);
+
+        // The canonical probe info fetch. (PSS)
+        getSearchResults(probeName, true, $store.searchProduct).then((r) => {
+          let newProbe = { ...r[0], loaded: true };
+
+          // if the product has changed,
+          // set it in the store and use store.resetProductDimensions()
+          // to initialize.
+          if (product && storeValue.product !== product) {
+            store.setProduct(product);
           }
-          productConfig[$store.product].setDefaultsForProbe(store, newProbe);
-        }
+          store.setField('probe', newProbe);
+
+          if (productConfig[product].transformProbeForGLAM) {
+            newProbe = productConfig[product].transformProbeForGLAM(newProbe);
+          }
+          productConfig[product].setDefaultsForProbe(store, newProbe);
+        });
       }
 
       store.setField('route', {
@@ -80,19 +86,19 @@
   });
 
   page('/', useComponent(Home));
-  page('/:product/:section/:probeName/explore', useComponent(ProbeExplore, 'explore'));
-  page('/:product/:section/:probeName/table', useComponent(ProbeTable, 'table'));
+  page(
+    '/:product/:section/:probeName/explore',
+    useComponent(ProbeExplore, 'explore')
+  );
+  page(
+    '/:product/:section/:probeName/table',
+    useComponent(ProbeTable, 'table')
+  );
   page('*', useComponent(NotFound));
 
   page.start();
 </script>
 
 <Layout>
-  {#if $store.auth.isAuthenticated}
-    <svelte:component this={component} />
-  {:else}
-    <div class="graphic-body__content">
-      <Spinner size={48} color={'var(--cool-gray-400)'} />
-    </div>
-  {/if}
+  <svelte:component this={component} />
 </Layout>

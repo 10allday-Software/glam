@@ -1,11 +1,12 @@
 import os
 
 import orjson
+from django.conf import settings
 from django.core.cache import caches
 from django.db.models import Max, Q, Value
 from django.db.models.functions import Concat
 from rest_framework.decorators import api_view
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
 from glam.api import constants
@@ -14,9 +15,30 @@ from glam.api.models import (
     DesktopNightlyAggregationView,
     DesktopReleaseAggregationView,
     FenixAggregationView,
+    FenixCounts,
     FirefoxCounts,
+    LastUpdated,
     Probe,
 )
+
+
+@api_view(["GET"])
+def updates(request):
+    product = request.GET.get("product")
+    query = LastUpdated.objects.all()
+    if product:
+        query = query.filter(product=product)
+
+    return Response(
+        {
+            "updates": {
+                row.product: row.last_updated.strftime(
+                    settings.REST_FRAMEWORK["DATETIME_FORMAT"]
+                )
+                for row in query
+            }
+        }
+    )
 
 
 def get_firefox_aggregations(request, **kwargs):
@@ -34,11 +56,6 @@ def get_firefox_aggregations(request, **kwargs):
     channel = kwargs.get("channel")
     model_key = f"{product}-{channel}"
 
-    # If release channel, make sure the user is authenticated.
-    if channel == constants.CHANNEL_NAMES[constants.CHANNEL_RELEASE]:
-        if not request.user.is_authenticated:
-            raise PermissionDenied()
-
     MODEL_MAP = {
         "firefox-nightly": DesktopNightlyAggregationView,
         "firefox-beta": DesktopBetaAggregationView,
@@ -55,6 +72,11 @@ def get_firefox_aggregations(request, **kwargs):
         max_version = int(model.objects.aggregate(Max("version"))["version__max"])
     except (ValueError, KeyError):
         raise ValidationError("Query version cannot be determined")
+    except TypeError:
+        # This happens when `version_max` is NULL and cannot be converted to an int,
+        # suggesting that we have no data for this model.
+        raise NotFound("No data found for the provided parameters")
+
     versions = list(map(str, range(max_version, max_version - num_versions, -1)))
 
     labels_cache = caches["probe-labels"]
@@ -138,7 +160,7 @@ def _get_firefox_counts(channel, os, versions, by_build):
 def get_glean_aggregations(request, **kwargs):
     REQUIRED_QUERY_PARAMETERS = [
         "aggregationLevel",
-        "channel",
+        "app_id",
         "ping_type",
         "probe",
         "product",
@@ -161,15 +183,20 @@ def get_glean_aggregations(request, **kwargs):
         max_version = int(model.objects.aggregate(Max("version"))["version__max"])
     except (ValueError, KeyError):
         raise ValidationError("Query version cannot be determined")
+    except TypeError:
+        # This happens when `version_max` is NULL and cannot be converted to an int,
+        # suggesting that we have no data for this model.
+        raise NotFound("No data found for the provided parameters")
+
     versions = list(map(str, range(max_version, max_version - num_versions, -1)))
 
-    channel = kwargs["channel"]
+    app_id = kwargs["app_id"]
     probe = kwargs["probe"]
     ping_type = kwargs["ping_type"]
     os = kwargs.get("os", "*")
 
     dimensions = [
-        Q(channel=channel),
+        Q(app_id=app_id),
         Q(metric=probe),
         Q(ping_type=ping_type),
         Q(version__in=versions),
@@ -180,10 +207,10 @@ def get_glean_aggregations(request, **kwargs):
     # Whether to pull aggregations by version or build_id.
     if aggregation_level == "version":
         dimensions.append(Q(build_id="*"))
-        # counts = _get_fenix_counts(channel, os, versions, by_build=False)
+        counts = _get_fenix_counts(app_id, versions, ping_type, os, by_build=False)
     elif aggregation_level == "build_id":
         dimensions.append(~Q(build_id="*"))
-        # counts = _get_fenix_counts(channel, os, versions, by_build=True)
+        counts = _get_fenix_counts(app_id, versions, ping_type, os, by_build=True)
 
     result = model.objects.filter(*dimensions)
 
@@ -192,7 +219,6 @@ def get_glean_aggregations(request, **kwargs):
     for row in result:
 
         data = {
-            "channel": row.channel,
             "version": row.version,
             "ping_type": row.ping_type,
             "os": row.os,
@@ -208,11 +234,34 @@ def get_glean_aggregations(request, **kwargs):
         }
 
         # Get the total distinct client IDs for this set of dimensions.
-        # data["total_addressable_market"] = counts.get(f"{row.version}-{row.build_id}")
+        data["total_addressable_market"] = counts.get(f"{row.version}-{row.build_id}")
 
         response.append(data)
 
     return response
+
+
+def _get_fenix_counts(app_id, versions, ping_type, os, by_build):
+    """
+    Helper method to gather the `FenixCounts` data in a single query.
+
+    Returns the data as a Python dict keyed by "{version}-{build_id}" for
+    quick lookup.
+
+    """
+    query = FenixCounts.objects.filter(
+        app_id=app_id, version__in=versions, ping_type=ping_type, os=os
+    )
+    if by_build:
+        query = query.exclude(build_id="*")
+    else:
+        query = query.filter(build_id="*")
+    query = query.annotate(key=Concat("version", Value("-"), "build_id"))
+    data = {
+        row["key"]: row["total_users"] for row in query.values("key", "total_users")
+    }
+
+    return data
 
 
 @api_view(["POST"])
@@ -337,7 +386,7 @@ def random_probes(request):
         try:
             probe = Probe.objects.get(info__name=agg.metric)
         except Probe.DoesNotExist:
-            pass
+            continue
 
         probes.append({"data": agg.histogram, "info": probe.info})
 

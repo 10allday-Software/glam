@@ -43,8 +43,7 @@ jobs:
           paths:
             - ./node_modules
       - run: npm run build
-      - run: npm run format:check
-      # - run: npm test # don't run this until design library is gone
+      - run: npm run test
 
 workflows:
   version: 2

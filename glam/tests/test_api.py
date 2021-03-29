@@ -1,18 +1,20 @@
 import json
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.urls import reverse
+from django.utils import timezone
 
 from glam.api import constants
 from glam.api.models import (
     DesktopNightlyAggregation,
-    DesktopReleaseAggregation,
     FenixAggregation,
+    FenixCounts,
     FirefoxCounts,
+    LastUpdated,
     Probe,
 )
-from glam.auth.drf import OIDCTokenAuthentication, TokenUser
 
 
 def _create_aggregation(data=None, multiplier=1.0, model=None):
@@ -65,7 +67,8 @@ def _create_aggregation(data=None, multiplier=1.0, model=None):
 
 def _create_glean_aggregation(model, data=None, multiplier=1.0):
     _data = {
-        "channel": "release",
+        "channel": "production",
+        "app_id": "nightly",
         "version": "2",
         "ping_type": "*",
         "os": "*",
@@ -98,7 +101,15 @@ def _create_glean_aggregation(model, data=None, multiplier=1.0):
         _data.update(data)
     model.objects.create(**_data)
 
-    # TODO: Add data to counts table.
+    for app_id in ["nightly", "beta", "release"]:
+        FenixCounts.objects.get_or_create(
+            app_id=app_id,
+            version=_data["version"],
+            ping_type=_data["ping_type"],
+            build_id=_data["build_id"],
+            os=_data["os"],
+            total_users=888,
+        )
 
     with connection.cursor() as cursor:
         view = f"view_{model._meta.db_table}"
@@ -218,6 +229,18 @@ class TestDesktopAggregationsApi:
         assert resp.status_code == 400
         assert resp.json()[0] == "Unexpected JSON body"
 
+    def test_empty_data(self, client):
+        # Test no data doesn't trigger a 500.
+        query = {
+            "query": {
+                "channel": "nightly",
+                "probe": "gc_ms",
+                "aggregationLevel": "version",
+            }
+        }
+        resp = client.post(self.url, data=query, content_type="application/json")
+        assert resp.status_code == 404
+
     @pytest.mark.parametrize(
         "query, missing",
         [
@@ -298,41 +321,6 @@ class TestDesktopAggregationsApi:
             "version": "72",
         }
 
-    def test_release_denied(self, client):
-        query = {
-            "query": {
-                "channel": "release",
-                "probe": "gc_ms",
-                "aggregationLevel": "version",
-            }
-        }
-        resp = client.post(self.url, data=query, content_type="application/json")
-        assert resp.status_code == 403
-
-    def test_release_allowed(self, client, monkeypatch):
-        monkeypatch.setattr(
-            OIDCTokenAuthentication,
-            "authenticate",
-            lambda self, request: (TokenUser(), {"scope": "read:foo"}),
-        )
-
-        _create_aggregation(model=DesktopReleaseAggregation)
-
-        query = {
-            "query": {
-                "channel": "release",
-                "probe": "gc_ms",
-                "aggregationLevel": "version",
-            }
-        }
-        resp = client.post(
-            self.url,
-            data=query,
-            content_type="application/json",
-            HTTP_AUTHORIZATION="Bearer token",
-        )
-        assert resp.status_code == 200
-
     def test_versions_provided(self, client):
         _create_aggregation()
 
@@ -398,17 +386,30 @@ class TestGleanAggregationsApi:
     def setup_class(cls):
         cls.url = reverse("v1-data")
 
+    def test_empty_data(self, client):
+        # Test no data doesn't trigger a 500.
+        query = {
+            "query": {
+                "product": "fenix",
+                "app_id": "nightly",
+                "ping_type": "baseline",
+                "probe": "gc_ms",
+                "aggregationLevel": "version",
+            }
+        }
+        resp = client.post(self.url, data=query, content_type="application/json")
+        assert resp.status_code == 404
+
     @pytest.mark.parametrize(
         # Not testing all possible combinations here, just the boundaries and
         # spot checking.
         "query, missing",
         [
-            ({"channel": None, "ping_type": None, "probe": None}, "aggregationLevel"),
-            ({"aggregationLevel": None, "ping_type": None, "probe": None}, "channel"),
-            ({"aggregationLevel": None, "channel": None, "probe": None}, "ping_type"),
-            ({"aggregationLevel": None, "channel": None, "ping_type": None}, "probe"),
-            ({"channel": None}, "aggregationLevel, ping_type, probe"),
-            ({}, "aggregationLevel, channel, ping_type, probe"),
+            ({"ping_type": None, "probe": None}, "aggregationLevel, app_id"),
+            ({"aggregationLevel": None, "ping_type": None, "probe": None}, "app_id"),
+            ({"aggregationLevel": None, "app_id": None, "probe": None}, "ping_type"),
+            ({"aggregationLevel": None, "app_id": None, "ping_type": None}, "probe"),
+            ({}, "aggregationLevel, app_id, ping_type, probe"),
         ],
     )
     def test_required_glean_params(self, client, query, missing):
@@ -429,7 +430,7 @@ class TestGleanAggregationsApi:
         query = {
             "query": {
                 "product": "fenix",
-                "channel": "release",
+                "app_id": "nightly",
                 "probe": "events_total_uri_count",
                 "ping_type": "*",
                 "aggregationLevel": "version",
@@ -442,7 +443,6 @@ class TestGleanAggregationsApi:
         assert data["response"][0] == {
             "build_date": None,
             "build_id": "*",
-            "channel": "release",
             "client_agg_type": "avg",
             "histogram": {"0": 100.0001, "1": 200.0002, "2": 300.0003, "3": 400.0004},
             "metric": "events_total_uri_count",
@@ -453,6 +453,7 @@ class TestGleanAggregationsApi:
             "ping_type": "*",
             "total_users": 1110,
             "version": "2",
+            "total_addressable_market": 888,
         }
 
     def test_versions_count(self, client):
@@ -467,7 +468,7 @@ class TestGleanAggregationsApi:
         query = {
             "query": {
                 "product": "fenix",
-                "channel": "release",
+                "app_id": "nightly",
                 "ping_type": "*",
                 "probe": "events_total_uri_count",
                 "versions": 4,
@@ -480,3 +481,44 @@ class TestGleanAggregationsApi:
         assert len(data["response"]) == 4
         versions = sorted([d["version"] for d in data["response"]])
         assert versions == sorted(["6", "5", "4", "3"])
+
+
+class TestUpdatesApi:
+    @classmethod
+    def setup_class(cls):
+        cls.url = reverse("v1-updates")
+        cls.datetime1 = timezone.datetime(year=2020, month=1, day=1).replace(
+            tzinfo=timezone.utc
+        )
+        cls.datetime2 = timezone.datetime(year=2020, month=2, day=2).replace(
+            tzinfo=timezone.utc
+        )
+
+    def _create_stamps(self):
+        LastUpdated.objects.create(product="desktop", last_updated=self.datetime1)
+        LastUpdated.objects.create(
+            product="org_mozilla_fenix", last_updated=self.datetime2
+        )
+
+    def test_no_params(self, client):
+        self._create_stamps()
+
+        resp = client.get(self.url)
+        data = resp.json()
+        assert len(data["updates"]) == 2
+        assert data["updates"]["desktop"] == self.datetime1.strftime(
+            settings.REST_FRAMEWORK["DATETIME_FORMAT"]
+        )
+        assert data["updates"]["org_mozilla_fenix"] == self.datetime2.strftime(
+            settings.REST_FRAMEWORK["DATETIME_FORMAT"]
+        )
+
+    def test_params(self, client):
+        self._create_stamps()
+
+        resp = client.get(self.url, data={"product": "desktop"})
+        data = resp.json()
+        assert len(data["updates"]) == 1
+        assert data["updates"]["desktop"] == self.datetime1.strftime(
+            settings.REST_FRAMEWORK["DATETIME_FORMAT"]
+        )

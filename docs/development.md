@@ -6,7 +6,10 @@ https://github.com/mozilla/glam
 
 GLAM uses Docker for local development and deployment. Please make sure to
 install [Docker] and [Docker Compose] on your computer to contribute code or
-documentation changes.
+documentation changes. Note that GLAM requires a fair bit of disk space-- if
+you're using Docker for Mac, you might want to increase the allocation of disk
+space to the Docker virtual machine to at least 100G (via Preferences ->
+Resources -> Advanced).
 
 [docker]: https://docs.docker.com/engine/installation/#supported-platforms
 [docker compose]: https://docs.docker.com/compose/install/
@@ -15,15 +18,16 @@ documentation changes.
 
 To set the application up, please copy the `.env-dist` file to one named `.env`.
 
-Set the `DJANGO_SECRET_KEY` variable using the output of the following command
-after logging into the Docker container with `make shell`:
+Set the `DJANGO_SECRET_KEY` and `NGINX_SESSION_SECRET` variables using the
+output of running the following command twice, after logging into the Docker
+container with `make shell`:
 
 ```
 python -c "import secrets; print(secrets.token_urlsafe(50))"
 ```
 
-Reach out to someone on the #glam Slack channel for the values of
-`GOOGLE_CLOUD_PROJECT` and `AUTH0_*` variables.
+Reach out to someone on the #glam Slack channel for the values of the
+`GOOGLE_CLOUD_PROJECT` and `OIDC_CLIENT_ID` variables.
 
 ## Initial Setup
 
@@ -79,23 +83,39 @@ To start the application, run:
 make up
 ```
 
-The GLAM server is now running at http://localhost:8000. You can hit API
-endpoints with `curl` like this example:
+This will launch 2 servers:
+
+- http://localhost:5000 is an nginx server configured to authenticate via
+  Mozilla's auth0 backend and will proxy GLAM.
+- http://localhost:8000 is the Django server that contains the API endpoints and
+  serves up the front-end HTML and static assets.
+
+See below for building the front-end Javascript and other static assets.
+
+With these servers running you can, e.g., query the data via `curl`:
 
 ```
 curl -s -X POST -H "Content-Type: application/json" http://localhost:8000/api/v1/data/ -d '{"query": {"channel": "nightly", "versions": ["70"], "probe": "gc_ms", "aggregationLevel": "version"}}' | python -m json.tool
 ```
 
-## Starting the front-end
+## Building the front-end
 
-To build and run the front-end, run the following command on your computer (not
-in the docker container) at the root of the repository:
+The front-end is installed and run on the host system, not in the Docker
+container.
+
+To build the front-end, make sure you've installed the npm packages:
+
+```
+npm install
+```
+
+Then, run the following command:
 
 ```
 npm run dev
 ```
 
-Once finished open the website at http://localhost:5000 to start browsing.
+This will build and live reload changes as they're made while developing.
 
 ## Code quality
 

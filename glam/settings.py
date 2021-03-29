@@ -39,7 +39,6 @@ class Core(Configuration):
         "dockerflow.django",
         # Django apps
         "django.contrib.auth",
-        "mozilla_django_oidc",
         "django.contrib.contenttypes",
         "django.contrib.staticfiles",
     ]
@@ -57,10 +56,6 @@ class Core(Configuration):
     WSGI_APPLICATION = "glam.wsgi.application"
 
     DEFAULT_FROM_EMAIL = "telemetry-alerts@mozilla.com"
-
-    AUTHENTICATION_BACKENDS = [
-        "mozilla_django_oidc.auth.OIDCAuthenticationBackend",
-    ]
 
     # Internationalization
     # https://docs.djangoproject.com/en/1.9/topics/i18n/
@@ -103,25 +98,16 @@ class Core(Configuration):
         }
     ]
 
-    # Auth0
-    OIDC_RP_SIGN_ALGO = "RS256"
-    OIDC_OP_JWKS_ENDPOINT = "https://auth.mozilla.auth0.com/.well-known/jwks.json"
-
     # Django REST Framework
     REST_FRAMEWORK = {
-        "DEFAULT_AUTHENTICATION_CLASSES": [
-            "glam.auth.drf.OIDCTokenAuthentication",
-        ],
-        "DEFAULT_PARSER_CLASSES": [
-            "drf_orjson_renderer.parsers.ORJSONParser",
-        ],
-        "DEFAULT_RENDERER_CLASSES": [
-            "drf_orjson_renderer.renderers.ORJSONRenderer",
-        ],
+        "DEFAULT_PARSER_CLASSES": ["drf_orjson_renderer.parsers.ORJSONParser"],
+        "DEFAULT_RENDERER_CLASSES": ["drf_orjson_renderer.renderers.ORJSONRenderer"],
+        "DATETIME_FORMAT": "%Y-%m-%dT%H:%M:%S",
     }
 
-    GA_TRACKING_ID = values.Value("", environ_name="GA_TRACKING_ID",
-        environ_prefix=None)
+    GA_TRACKING_ID = values.Value(
+        "", environ_name="GA_TRACKING_ID", environ_prefix=None
+    )
 
 
 class Base(Core):
@@ -140,13 +126,11 @@ class Base(Core):
     # If we start using the cache for anything heavy, consider using a true
     # cache instead of locmem as default cache. This is mostly a placeholder.
     CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+        "probe-labels": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "probe-labels",
         },
-        'probe-labels': {
-            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-            'LOCATION': 'probe-labels',
-        }
     }
 
     LOGGING_USE_JSON = values.BooleanValue(False)
@@ -188,11 +172,6 @@ class Base(Core):
                 "django.server": {
                     "handlers": ["django.server"],
                     "level": "INFO",
-                    "propagate": False,
-                },
-                "mozilla_django_oidc": {
-                    "level": "INFO",
-                    "handlers": ["console"],
                     "propagate": False,
                 },
             },

@@ -1,12 +1,12 @@
 <script>
-  import Spinner from 'udgl/LineSegSpinner.svelte';
   import { fade } from 'svelte/transition';
 
   import Probe from '../../wrappers/Probe.svelte';
   import ProportionExplorerView from '../../../components/explore/ProportionExplorerView.svelte';
   import QuantileExplorerView from '../../../components/explore/QuantileExplorerView.svelte';
   import ProbeTitle from '../../../components/regions/ProbeTitle.svelte';
-  import { store, probe } from '../../../state/store';
+  import Spinner from '../../../components/LineSegSpinner.svelte';
+  import { store } from '../../../state/store';
 
   function handleBodySelectors(event) {
     const { selection, type } = event.detail;
@@ -17,8 +17,11 @@
 
     const field = renames[type] || type;
     // FIXME: use the productConfig from an upcoming PR.
-    if (field === 'aggregationLevel') store.setDimension(field, selection);
-    else store.setField(field, selection);
+    if (field === 'aggregationLevel') {
+      store.setDimension(field, selection);
+    } else {
+      store.setField(field, selection);
+    }
   }
 </script>
 
@@ -27,7 +30,6 @@
     {#if probeType === 'categorical'}
       <ProportionExplorerView
         data={data.data}
-        probeType={`${$probe.type}-${$probe.kind}`}
         metricType={$store.proportionMetricType}
         activeBuckets={[...$store.activeBuckets]}
         timeHorizon={$store.timeHorizon}
@@ -36,17 +38,17 @@
         bucketSortOrder={data.bucketSortOrder}
         on:selection={handleBodySelectors}
         aggregationLevel={$store.productDimensions.aggregationLevel}>
-          <ProbeTitle />
+        <ProbeTitle />
       </ProportionExplorerView>
-    {:else if ['histogram', 'scalar'].includes(probeType)}
+    {:else if ['log', 'linear'].includes(probeType)}
       <QuantileExplorerView
         data={data.data}
-        probeType={probeType}
+        {probeType}
         timeHorizon={$store.timeHorizon}
         percentiles={$store.visiblePercentiles}
         on:selection={handleBodySelectors}
         aggregationLevel={$store.productDimensions.aggregationLevel}>
-          <ProbeTitle />
+        <ProbeTitle />
       </QuantileExplorerView>
     {:else}
       <div class="graphic-body__content">

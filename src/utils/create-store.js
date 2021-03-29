@@ -41,6 +41,12 @@ export function createStore(initialStore) {
   function setDimension(key, value) {
     INTERNAL_STORE.update((state) =>
       produce(state, (draft) => {
+        // When changing aggregation level, reset zoom states.
+        if (key === 'aggregationLevel') {
+          draft.hov = '';
+          draft.ref = '';
+          draft.timeHorizon = 'MONTH';
+        }
         draft.productDimensions[key] = value;
       })
     );
@@ -50,9 +56,17 @@ export function createStore(initialStore) {
     return (...args) => dispatch(func(...args));
   }
 
-  function reinitialize(include = {}) {
-    const nextState = { ...initialStore, ...include };
-    INTERNAL_STORE.set(nextState);
+  function reinitialize(options = {}) {
+    let stateToKeep = {};
+    if (options.exceptions) {
+      const currentState = getState();
+      stateToKeep = options.exceptions.reduce((acc, field) => {
+        acc[field] = currentState[field];
+        return acc;
+      }, {});
+    }
+
+    INTERNAL_STORE.set({ ...initialStore, ...stateToKeep });
   }
 
   return {

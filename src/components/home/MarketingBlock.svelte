@@ -1,13 +1,3 @@
-<script>
-  import { tweened } from 'svelte/motion';
-  import { cubicOut as easing } from 'svelte/easing';
-  import Button from 'udgl/Button.svelte';
-  import { DocumentationDark } from '@graph-paper/icons';
-
-  const t = tweened(0, { duration: 500, easing });
-  $: $t = 1;
-</script>
-
 <style>
   .marketing-block {
     padding: var(--space-2x);
@@ -31,11 +21,6 @@
     margin-bottom: var(--space-4x);
   }
 
-  .marketing-block__call-to-action {
-    margin-top: var(--space-2x);
-    margin-bottom: var(--space-4x);
-  }
-
   .marketing-block__ask-us {
     font-weight: 200;
     font-style: italic;
@@ -48,22 +33,8 @@
       Uncover trends and insights about your product's telemetry probes.
     </h2>
     <div class="marketing-block__description">
-      Currently serving: Firefox. Coming soon: Fenix.
+      Currently serving: Firefox Desktop, Firefox Android.
     </div>
-    <div class="marketing-block__call-to-action">
-      <a
-        class="button-link"
-        target="_blank"
-        href="https://docs.google.com/document/d/1qIkEDemnODbYuVIfpciohgEXcaFjrK_mfVG5FOSeVuM/preview"
-      >
-        <Button>
-          <div style='display: grid; grid-auto-flow: column; align-items: center; grid-column-gap: var(--space-base);'>
-            <DocumentationDark size={14} /> Documentation
-          </div>
-        </Button>
-      </a>
-    </div>
-
     <div class="marketing-block__ask-us">
       Questions? Bugs? Requests? Find us at #GLAM on Slack.
     </div>

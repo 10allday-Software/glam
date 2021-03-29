@@ -1,15 +1,19 @@
 import datetime
+import os
 import tempfile
 
 from django.apps import apps
 from django.core.management.base import BaseCommand
 from django.db import connection
+from django.utils import timezone
 from google.cloud import storage
 
 from glam.api import constants
+from glam.api.models import LastUpdated
 
 
-GCS_BUCKET = "glam-dev-bespoke-nonprod-dataops-mozgcp-net"
+# For logging
+FILENAME = os.path.basename(__file__).split(".")[0]
 CHANNEL_TO_MODEL = {
     "nightly": "api.DesktopNightlyAggregation",
     "beta": "api.DesktopBetaAggregation",
@@ -17,11 +21,10 @@ CHANNEL_TO_MODEL = {
 }
 
 
-def log(message):
+def log(channel, message):
     print(
-        "{stamp} - {message}".format(
-            stamp=datetime.datetime.now().strftime("%x %X"), message=message
-        )
+        f"{datetime.datetime.now().strftime('%x %X')} - "
+        f"{FILENAME} - {channel} - {message}"
     )
 
 
@@ -31,12 +34,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "channel", choices=constants.CHANNEL_IDS.keys(),
+            "channel",
+            choices=constants.CHANNEL_IDS.keys(),
         )
         parser.add_argument(
             "--bucket",
             help="The bucket location for the exported aggregates",
-            default=GCS_BUCKET,
+            default=constants.GCS_BUCKET,
         )
 
     def handle(self, bucket, *args, **options):
@@ -53,8 +57,8 @@ class Command(BaseCommand):
 
         for blob in blobs:
             # Create temp table for data.
-            tmp_table = f"tmp_import_{channel}"
-            log(f"Creating temp table for import: {tmp_table}.")
+            tmp_table = f"tmp_import_desktop_{channel}"
+            log(channel, f"Creating temp table for import: {tmp_table}.")
             with connection.cursor() as cursor:
                 cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
                 cursor.execute(
@@ -64,18 +68,18 @@ class Command(BaseCommand):
 
             # Download CSV file to local filesystem.
             fp = tempfile.NamedTemporaryFile()
-            log(f"Copying GCS file {blob.name} to local file {fp.name}.")
+            log(channel, f"Copying GCS file {blob.name} to local file {fp.name}.")
             blob.download_to_filename(fp.name)
 
             #  Load CSV into temp table & insert data from temp table into
             #  aggregation tables, using upserts.
-            self.import_file(tmp_table, fp, model)
+            self.import_file(tmp_table, fp, model, channel)
 
             #  Drop temp table and remove file.
-            log("Dropping temp table.")
+            log(channel, "Dropping temp table.")
             with connection.cursor() as cursor:
                 cursor.execute(f"DROP TABLE {tmp_table}")
-            log(f"Deleting local file: {fp.name}.")
+            log(channel, f"Deleting local file: {fp.name}.")
             fp.close()
 
         # Once all files are loaded, refresh the materialized views.
@@ -83,11 +87,15 @@ class Command(BaseCommand):
         if blobs:
             with connection.cursor() as cursor:
                 view = f"view_{model._meta.db_table}"
-                log(f"Refreshing materialized view for {view}")
+                log(channel, f"Refreshing materialized view for {view}")
                 cursor.execute(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view}")
-                log("Refresh completed.")
+                log(channel, "Refresh completed.")
 
-    def import_file(self, tmp_table, fp, model):
+        LastUpdated.objects.update_or_create(
+            product="desktop", defaults={"last_updated": timezone.now()}
+        )
+
+    def import_file(self, tmp_table, fp, model, channel):
 
         csv_columns = [f.name for f in model._meta.get_fields() if f.name not in ["id"]]
         conflict_columns = [
@@ -96,7 +104,7 @@ class Command(BaseCommand):
             if f not in ["id", "total_users", "histogram", "percentiles"]
         ]
 
-        log("  Importing file into temp table.")
+        log(channel, "  Importing file into temp table.")
         with connection.cursor() as cursor:
             with open(fp.name, "r") as tmp_file:
                 sql = f"""
@@ -104,7 +112,7 @@ class Command(BaseCommand):
                 """
                 cursor.copy_expert(sql, tmp_file)
 
-        log("  Inserting data from temp table into aggregation tables.")
+        log(channel, "  Inserting data from temp table into aggregation tables.")
         with connection.cursor() as cursor:
             sql = f"""
                 INSERT INTO {model._meta.db_table} ({", ".join(csv_columns)})

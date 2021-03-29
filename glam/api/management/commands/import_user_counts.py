@@ -1,42 +1,46 @@
 import datetime
+import os
 import tempfile
 
 from django.core.management.base import BaseCommand
 from django.db import connection
 from google.cloud import storage
 
+from glam.api import constants
 from glam.api.models import FirefoxCounts
 
 
-GCS_BUCKET = "glam-dev-bespoke-nonprod-dataops-mozgcp-net"
+# For logging
+FILENAME = os.path.basename(__file__).split(".")[0]
 
 
 def log(message):
-    print(
-        "{stamp} - {message}".format(
-            stamp=datetime.datetime.now().strftime("%x %X"), message=message
-        )
-    )
+    print(f"{datetime.datetime.now().strftime('%x %X')} - {FILENAME} - {message}")
 
 
 class Command(BaseCommand):
 
     help = "Imports user counts"
 
-    def handle(self, *args, **options):
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--bucket",
+            default=constants.GCS_BUCKET,
+            help="The bucket location for the exported counts",
+        )
+
+    def handle(self, bucket, *args, **options):
 
         self.gcs_client = storage.Client()
 
-        blobs = self.gcs_client.list_blobs(GCS_BUCKET)
+        blobs = self.gcs_client.list_blobs(bucket)
         blobs = list(
-            filter(
-                lambda b: b.name.startswith(f"glam-extract-firefox-counts"), blobs
-            )
+            filter(lambda b: b.name.startswith("glam-extract-firefox-counts"), blobs)
         )
 
         for blob in blobs:
             # Create temp table for data.
-            tmp_table = f"tmp_import_counts"
+            tmp_table = "tmp_import_desktop_counts"
             log(f"Creating temp table for import: {tmp_table}.")
             with connection.cursor() as cursor:
                 cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
@@ -62,11 +66,11 @@ class Command(BaseCommand):
     def import_file(self, tmp_table, fp):
 
         csv_columns = [
-            f.name for f in FirefoxCounts._meta.get_fields()
-            if f.name not in ["id"]
+            f.name for f in FirefoxCounts._meta.get_fields() if f.name not in ["id"]
         ]
         conflict_columns = [
-            f for f in FirefoxCounts._meta.constraints[0].fields
+            f
+            for f in FirefoxCounts._meta.constraints[0].fields
             if f not in ["id", "total_users"]
         ]
 
@@ -76,7 +80,6 @@ class Command(BaseCommand):
                 sql = "COPY {tmp_table} ({columns}) FROM STDIN WITH CSV".format(
                     tmp_table=tmp_table, columns=", ".join(csv_columns)
                 )
-                print(sql)
                 cursor.copy_expert(sql, tmp_file)
 
         log("  Inserting data from temp table into aggregation tables.")
@@ -92,5 +95,4 @@ class Command(BaseCommand):
                 tmp_table=tmp_table,
                 conflict_columns=", ".join(conflict_columns),
             )
-            print(sql)
             cursor.execute(sql)
